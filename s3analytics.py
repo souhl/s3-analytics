@@ -3,16 +3,16 @@ import boto3
 class s3analytics(object):
 
     global accessKey
-    accessKey = "66f17aaff1f506f6b04e"
+    accessKey = ""
 
     global secretKey
-    secretKey = "rZr2al0WoWD9oYMV133/WVu37tMRWLwPThkrhkCv"
+    secretKey = ""
 
     global endPoint
-    endPoint = "http://s3-germany.cloudianeval.de"
+    endPoint = ""
 
     global bucketId
-    bucketId = "veeam"
+    bucketId = ""
 
     global targetBucket
 
@@ -98,7 +98,7 @@ class s3analytics(object):
             print("OBJECT COUNTS and SIZES")
             print(" ")
             print("Total Objects    : " + str(objectsTotalCount))
-            print("Total Size (MB)   : " + str(objectsTotalSize*1024*1024))
+            print("Total Size (MB)   : " + str(objectsTotalSize/1024/1024))
             print(" ")
             print("up to 20KB       : " + str(objects20k))
             print("20KB to 50KB     : " + str(objects50k))
