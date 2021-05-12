@@ -18,7 +18,7 @@ up to 20KB       : 1194
 100KB to 200KB   : 2848
 200KB to 300KB   : 0
 300KB to 500KB   : 8193
-500KBup to 700KB : 19487
+500KB to 700KB   : 19487
 700KB to 1MB     : 8652
 1MB to 2MB       : 514340
 2MB to 5MB       : 70
