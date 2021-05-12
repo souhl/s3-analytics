@@ -10,7 +10,7 @@ Sample Output:
 OBJECT COUNTS and SIZES
 
 Total Objects    : 561256
-Total Size (MB)   : 538077.9520435333
+Total Size (MB)  : 538077.9520435333
 
 up to 20KB       : 1194
 20KB to 50KB     : 1281
