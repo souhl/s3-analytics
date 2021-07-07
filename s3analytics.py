@@ -1,6 +1,6 @@
 #########################################
 ## S3 Analytics Script
-## v0.12
+## v0.13
 ## by Sascha Uhl
 #########################################
 
@@ -8,172 +8,149 @@
 import os
 import boto3
 import boto3.session
+from tqdm import tqdm
 import threading
 import queue
 import os
 import datetime
 from datetime import datetime
-from botocore.exceptions import ClientError
 import sys
+from time import sleep
 
 class s3analytics(object):
 
     ## Connection Parameters
-    global accessKey
-    accessKey = "xxxxx"
 
-    global secretKey
-    secretKey = "yyyyyyyyyy"
+    ## S3 Access Key 
+    ACCESSKEY = "00d74f022207e1efbc34"
 
-    global endPoint
-    endPoint = "http://s3-......."
+    ## S3 Secret Key 
+    SECRETKEY = "ph5vWLgxfMSeG9JIKVpvtGatxirTuWpw798pMP3f"
 
-    global bucketId
-    bucketId = "BucketName"
+    ## S3 Endpoint 
+    ENDPOINT = "http://s3-munich.souhl.lab"
+
+    ## Bucket name to analyse
+    BUCKETID = "test"
 
     ## Number of Workers
-    global threadCount
-    threadCount = 128
-
-
-    ## Internal
-    global objects20k
-    objects20k = 0
-    global objects50k
-    objects50k = 0
-    global objects100k
-    objects100k = 0
-    global objects200k
-    objects200k = 0
-    global objects300k
-    objects300k = 0
-    global objects500k
-    objects500k = 0
-    global objects700k
-    objects700k = 0
-    global objects1m
-    objects1m = 0
-    global objects2m
-    objects2m = 0
-    global objects5m
-    objects5m = 0
-    global objects10m
-    objects10m = 0
-    global objects50m
-    objects50m = 0
-    global objects100m
-    objects100m = 0
-    global objects200m
-    objects200m = 0
-    global objects500m
-    objects500m = 0
-    global objectsLarge
-    objectsLarge = 0
-
-    global objectsTotalCount
-    objectsTotalCount = 0
-
-    global objectsTotalSize
-    objectsTotalSize = 0
-
-    global dateObjectLockLatest
-    dateObjectLockLatest = 0
-
-    global ObjectLockModeComplianceCount
-    ObjectLockModeComplianceCount = 0
-
-    global ObjectLockModeGovernanceCount
-    ObjectLockModeGovernanceCount = 0
-
-    global ObjectLockModeLegalHoldCount
-    ObjectLockModeLegalHoldCount = 0
-
-    global errorCount
-    errorCount = 0
-
-    global bucketVersioningEnabled
-    bucketVersioningEnabled = False
-
-    global bucketStoragePolicyID
-    bucketStoragePolicyID = 0
-
-    global bucketStorageRegion
-    bucketStorageRegion = ""
-
-    global bucketStorageServer
-    bucketStorageServer = ""
-
-    #global files_to_download
-    #files_to_download = []
-
+    THREADCOUNT = 128
 
     def __init__(self):
-        self.scanAndDump();
 
-    def scanAndDump(self):
+        self.bucketStorageServer = ""
 
-            session = boto3.Session()
-            s3 = session.client("s3", aws_access_key_id=accessKey, aws_secret_access_key=secretKey, endpoint_url=endPoint)
-            global lck 
-            lck = threading.Lock()
-            errorlogdate = datetime. now(). strftime("%Y_%m_%d-%I%M%S")
-            errorlogfilename = f"s3analytics_{errorlogdate}.error"
-            errorlog_f = open(errorlogfilename, "x")
+        self.objects20k = 0
+        self.objects50k = 0
+        self.objects100k = 0
+        self.objects200k = 0
+        self.objects300k = 0
+        self.objects500k = 0
+        self.objects700k = 0
+        self.objects1m = 0
+        self.objects2m = 0
+        self.objects5m = 0
+        self.objects10m = 0
+        self.objects50m = 0
+        self.objects100m = 0
+        self.objects200m = 0
+        self.objects500m = 0
+        self.objectsLarge = 0
 
-            try:
-                response = s3.get_bucket_versioning(Bucket=bucketId)
+        self.folderDepths = {}
+
+        self.TotalCountObjects = 0
+        self.objectsTotalSize = 0
+        self.dateObjectLockLatest = 0
+
+        self.ObjectLockModeComplianceCount = 0
+        self.ObjectLockModeGovernanceCount = 0
+        self.ObjectLockModeLegalHoldCount = 0
+
+        self.errorCount = 0
+
+        self.bucketVersioningEnabled = False
+        self.bucketStoragePolicyID = 0
+        self.bucketStorageRegion = ""
+
+        self.q = queue.Queue()
+        self.error_q = queue.Queue()
+
+        self.session = boto3.Session()
+        self.s3 = self.session.client("s3", aws_access_key_id=s3analytics.ACCESSKEY, aws_secret_access_key=s3analytics.SECRETKEY, endpoint_url=s3analytics.ENDPOINT)
+
+        errorlogdate = datetime. now(). strftime("%Y_%m_%d-%I%M%S")
+        self.errorlogfilename = f"s3analytics_{errorlogdate}.error"
+        self.errorlog_f = open(self.errorlogfilename, "x")
+
+        date = datetime. now(). strftime("%Y_%m_%d-%I%M%S")
+        self.filename = f"s3analytics_{date}.results"
+        self._resultFile = open(self.filename, "x")
+        
+        self.main()
+
+    def main(self):
+
+            self.lck = threading.Lock()  
+
+            def getFolderDepth(self,object):
                 
-                if 'Status' in response and response['Status'] == 'Enabled':
-                    global bucketVersioningEnabled
-                    bucketVersioningEnabled = True
-            except Exception as e:
-                #print(e)
-                sys.exit(e)
+                sentence = object
+                depth = sentence.count('/')
 
-            try:
-                response = s3.list_objects_v2(
-                    Bucket=bucketId,
-                    MaxKeys=2,
-                )
+                depthCount = 0
+                if depth in self.folderDepths: 
+                    depthCount = self.folderDepths[depth]
+                    depthCount = depthCount + 1
+                    #print(".")
+                w1 = {depth:depthCount}
+                self.folderDepths.update(w1)
+                #print (self.folderDepths)
 
-                #teststr = response['ResponseMetadata']['HTTPHeaders']['x-gmt-policyid']
-                #print(teststr)
+            def getBucketInformation(self):
+                try:
+                    response = self.s3.get_bucket_versioning(Bucket=s3analytics.BUCKETID)
+                
+                    if 'Status' in response and response['Status'] == 'Enabled':
+                        self.bucketVersioningEnabled = True
 
-                global bucketStoragePolicyID
-                bucketStoragePolicyID = response['ResponseMetadata']['HTTPHeaders']['x-gmt-policyid']
-                #print (str(bucketStoragePolicyID))
+                except Exception as e:
+                    sys.exit(e)
 
-                global bucketStorageRegion
-                bucketStorageRegion = response['ResponseMetadata']['HTTPHeaders']['x-amz-bucket-region']
-                #print (bucketStorageRegion)
+                try:
+                    response = self.s3.list_objects_v2(
+                        Bucket=s3analytics.BUCKETID,
+                        MaxKeys=2,
+                    )
 
-                global bucketStorageServer
-                bucketStorageServer = response['ResponseMetadata']['HTTPHeaders']['server']
-                #print (bucketStorageServer)
+                    self.bucketStoragePolicyID = response['ResponseMetadata']['HTTPHeaders']['x-gmt-policyid']
+                    self.bucketStorageRegion = response['ResponseMetadata']['HTTPHeaders']['x-amz-bucket-region']
+                    self.bucketStorageServer = response['ResponseMetadata']['HTTPHeaders']['server']
 
+                except Exception as e:
+                    sys.exit(e)
+        
+            def writeError(self,text):
+                self.lck.acquire()
+                self.errorlog_f.write(text+"\n")
+                self.lck.release()
 
-  
-            except Exception as e:
-                #print(e)
-                sys.exit(e)
+                self.errorCount = self.errorCount + 1
 
-            
+            def get_size_format(b, factor=1024, suffix="B"):
+                    """
+                    Scale bytes to its proper byte format
+                    e.g:
+                        1253656 => '1.20MB'
+                        1253656678 => '1.17GB'
+                    """
+                    for unit in ["", "K", "M", "G", "T", "P", "E", "Z"]:
+                        if b < factor:
+                            return f"{b:.2f}{unit}{suffix}"
+                        b /= factor
+                    return f"{b:.2f}Y{suffix}"
 
-
-            
-
-            def writeError(text):
-                global lck
-                lck.acquire()
-                errorlog_f.write(text+"\n")
-                #errorlog_f.close()
-                lck.release()
-
-                global errorCount
-                errorCount = errorCount + 1
-
-            def printresults(): 
-                def get_directory_size(directory):
+            def get_directory_size(directory):
                     """Returns the `directory` size in bytes."""
                     total = 0
                     try:
@@ -193,204 +170,245 @@ class s3analytics(object):
                         return 0
                     return total
 
-                def get_size_format(b, factor=1024, suffix="B"):
-                    """
-                    Scale bytes to its proper byte format
-                    e.g:
-                        1253656 => '1.20MB'
-                        1253656678 => '1.17GB'
-                    """
-                    for unit in ["", "K", "M", "G", "T", "P", "E", "Z"]:
-                        if b < factor:
-                            return f"{b:.2f}{unit}{suffix}"
-                        b /= factor
-                    return f"{b:.2f}Y{suffix}"
-
-                print('All work completed')
-
-                date = datetime. now(). strftime("%Y_%m_%d-%I%M%S")
-
-                filename = f"s3analytics_{date}.results"
-                
-                f = open(filename, "x")
-
-                def write2screenandfile (txt):
+            def write2screenandfile (txt,file):
                     print(txt)
-                    f.write(txt+"\n")
+                    file.write(txt+"\n")
 
+            def printresults(self): 
+            
+                print('All work completed')
                 print("                                                            ", end='\r')
                 print("                                                            ")
                 print("                                                            ")
-                #write2screenandfile("                                              ")
-                write2screenandfile("OBJECT ANALYTICS                              ")
-                write2screenandfile("##############################################")
 
-                write2screenandfile("                                              ")
-                #global endPoint
-                write2screenandfile("S3 Vendor : " + bucketStorageServer)
-                write2screenandfile("Endpoint  : " + endPoint)
-                #global bucketId
-                write2screenandfile("Bucket    : " + bucketId)
-                write2screenandfile("Region    : " + bucketStorageRegion)
-                if (bucketStorageServer == "CloudianS3"):
-                    write2screenandfile("Cloudian Storage Policy : " + str(bucketStoragePolicyID))
+                write2screenandfile("OBJECT ANALYTICS                              ",self._resultFile)
+                write2screenandfile("##############################################",self._resultFile)
+
+                write2screenandfile("                                              ",self._resultFile)
+                write2screenandfile("CONNECTION PARAMETERS                              ",self._resultFile)
+                write2screenandfile("##############################################",self._resultFile)
+                write2screenandfile("S3 Vendor : " + self.bucketStorageServer,self._resultFile)
+                write2screenandfile("Endpoint  : " + s3analytics.ENDPOINT,self._resultFile)
+                write2screenandfile("Bucket    : " + s3analytics.BUCKETID,self._resultFile)
+                write2screenandfile("Region    : " + self.bucketStorageRegion,self._resultFile)
+                if (self.bucketStorageServer == "CloudianS3"):
+                    write2screenandfile("Cloudian Storage Policy : " + str(self.bucketStoragePolicyID),self._resultFile)
                 
-                write2screenandfile(" ")
-                write2screenandfile("Total Objects    : " + str(objectsTotalCount))
-                write2screenandfile("Total Size (MB)  : " + get_size_format(objectsTotalSize)) #str(objectsTotalSize/1024/1024))
-                write2screenandfile("Errors           : " + str(errorCount))
-                write2screenandfile(" ")
-                write2screenandfile("up to 20KB       : " + str(objects20k))
-                write2screenandfile("20KB to 50KB     : " + str(objects50k))
-                write2screenandfile("50KB to 100KB    : " + str(objects100k))
-                write2screenandfile("100KB to 200KB   : " + str(objects200k))
-                write2screenandfile("200KB to 300KB   : " + str(objects300k))
-                write2screenandfile("300KB to 500KB   : " + str(objects500k))
-                write2screenandfile("500KB to 700KB   : " + str(objects700k))
-                write2screenandfile("700KB to 1MB     : " + str(objects1m))
-                write2screenandfile("1MB to 2MB       : " + str(objects2m))
-                write2screenandfile("2MB to 5MB       : " + str(objects5m))
-                write2screenandfile("5MB to 10MB      : " + str(objects10m))
-                write2screenandfile("10MB to 50MB     : " + str(objects50m))
-                write2screenandfile("50MB to 100MB    : " + str(objects100m))
-                write2screenandfile("200MB to 200MB   : " + str(objects200m))
-                write2screenandfile("200MB to 500MB   : " + str(objects500m))
-                write2screenandfile("Larger 500MB     : " + str(objectsLarge))
-                write2screenandfile(" ")
-                write2screenandfile(" ")
-                write2screenandfile("OBJECT LOCK INFORMATION:")
+                write2screenandfile(" ",self._resultFile)
+                write2screenandfile("OBJECTS SUMMARY                              ",self._resultFile)
+                write2screenandfile("##############################################",self._resultFile)
+                write2screenandfile("Total Objects    : " + str(self.TotalCountObjects),self._resultFile)
+                write2screenandfile("Total Size (MB)  : " + get_size_format(self.objectsTotalSize),self._resultFile)
+                write2screenandfile("Errors           : " + str(self.errorCount),self._resultFile)
+                write2screenandfile(" ",self._resultFile)
+                write2screenandfile("OBJECT SIZES with amount of objects                             ",self._resultFile)
+                write2screenandfile("##############################################",self._resultFile)
+                write2screenandfile("up to 20KB       : " + str(self.objects20k),self._resultFile)
+                write2screenandfile("20KB to 50KB     : " + str(self.objects50k),self._resultFile)
+                write2screenandfile("50KB to 100KB    : " + str(self.objects100k),self._resultFile)
+                write2screenandfile("100KB to 200KB   : " + str(self.objects200k),self._resultFile)
+                write2screenandfile("200KB to 300KB   : " + str(self.objects300k),self._resultFile)
+                write2screenandfile("300KB to 500KB   : " + str(self.objects500k),self._resultFile)
+                write2screenandfile("500KB to 700KB   : " + str(self.objects700k),self._resultFile)
+                write2screenandfile("700KB to 1MB     : " + str(self.objects1m),self._resultFile)
+                write2screenandfile("1MB to 2MB       : " + str(self.objects2m),self._resultFile)
+                write2screenandfile("2MB to 5MB       : " + str(self.objects5m),self._resultFile)
+                write2screenandfile("5MB to 10MB      : " + str(self.objects10m),self._resultFile)
+                write2screenandfile("10MB to 50MB     : " + str(self.objects50m),self._resultFile)
+                write2screenandfile("50MB to 100MB    : " + str(self.objects100m),self._resultFile)
+                write2screenandfile("200MB to 200MB   : " + str(self.objects200m),self._resultFile)
+                write2screenandfile("200MB to 500MB   : " + str(self.objects500m),self._resultFile)
+                write2screenandfile("Larger 500MB     : " + str(self.objectsLarge),self._resultFile)
+                write2screenandfile(" ",self._resultFile)
+                write2screenandfile(" ",self._resultFile)
+                write2screenandfile("BUCKET FOLDER DEPTHS with amount of objects",self._resultFile)
+                write2screenandfile("##############################################",self._resultFile)
+                for key in self.folderDepths:
+                    write2screenandfile("Depth " + str(key) + ": " + str(self.folderDepths[key]),self._resultFile)
 
-                global ObjectLockModeGovernanceCount,ObjectLockModeComplianceCount,ObjectLockModeLegalHoldCount
-                dt_object = datetime.fromtimestamp(dateObjectLockLatest)
-                if (ObjectLockModeGovernanceCount+ObjectLockModeComplianceCount > 0):
-                    write2screenandfile("Latest Object Lock set to       : " + str(dt_object))
+            def printresults2(self):
+                write2screenandfile(" ",self._resultFile)
+                write2screenandfile(" ",self._resultFile)
+                write2screenandfile("OBJECT LOCK INFORMATION:",self._resultFile)
+                write2screenandfile("##############################################",self._resultFile)
+
+                dt_object = datetime.fromtimestamp(self.dateObjectLockLatest)
+                if (self.ObjectLockModeGovernanceCount+self.ObjectLockModeComplianceCount > 0):
+                    write2screenandfile("Latest Object Lock set to       : " + str(dt_object),self._resultFile)
                 else:
-                    write2screenandfile("Latest Object Lock set to       : NOT SET")
-                write2screenandfile("Objects in Lock Mode Governance : " + str(ObjectLockModeGovernanceCount))
-                write2screenandfile("Objects in Lock Mode Compliance : " + str(ObjectLockModeComplianceCount))
-                write2screenandfile("Objects in Lock Mode Legal Hold : " + str(ObjectLockModeLegalHoldCount))
+                    write2screenandfile("Latest Object Lock set to       : NOT SET",self._resultFile)
+                write2screenandfile("Objects in Lock Mode Governance : " + str(self.ObjectLockModeGovernanceCount),self._resultFile)
+                write2screenandfile("Objects in Lock Mode Compliance : " + str(self.ObjectLockModeComplianceCount),self._resultFile)
+                write2screenandfile("Objects in Lock Mode Legal Hold : " + str(self.ObjectLockModeLegalHoldCount),self._resultFile)
 
-                global bucketVersioningEnabled
                 bucketVersioningEnabled = True
                 if bucketVersioningEnabled:
-                    write2screenandfile("Bucket Versioning Enabled       : YES")
+                    write2screenandfile("Bucket Versioning Enabled       : YES",self._resultFile)
                 else:
-                    write2screenandfile("Bucket Versioning Enabled       : NO")
+                    write2screenandfile("Bucket Versioning Enabled       : NO",self._resultFile)
 
                 print(" ")
+                write2screenandfile("OUTPUT:",self._resultFile)
+                write2screenandfile("##############################################",self._resultFile)
                 print("Output written to folder   : " + os.getcwd())
-                print("Output written to filename : " + filename)
-                f.close()
+                print("Output written to filename : " + self.filename)
+                self._resultFile.close()
 
-
-            def analyseObjectSizes(obSize):
+            def analyseObjectSizes(self,obSize):
                 if obSize:
-                    global objectsTotalCount
-                    objectsTotalCount = objectsTotalCount + 1
-                    global objectsTotalSize
-                    objectsTotalSize = objectsTotalSize + obSize
-                    global objectsLarge,objects20k,objects50k,objects100k,objects200k,objects500k,objects1m,objects700k,objects2m,objects5m,objects10m,objects50m,objects200m,objects100m,objects500m
-                    if   obSize < 20000 : objects20k = objects20k + 1
-                    elif obSize < 50000 : objects50k = objects50k + 1
-                    elif obSize < 100000 : objects100k = objects100k + 1
-                    elif obSize < 200000 : objects200k = objects200k + 1
-                    elif obSize < 500000 : objects500k = objects500k + 1
-                    elif obSize < 700000 : objects700k = objects700k + 1
-                    elif obSize < 1024000 : objects1m = objects1m + 1
-                    elif obSize < 2048000 : objects2m = objects2m + 1
-                    elif obSize < 5120000 : objects5m = objects5m + 1
-                    elif obSize < 10240000 : objects10m = objects10m + 1
-                    elif obSize < 51200000 : objects50m = objects50m + 1
-                    elif obSize < 102400000 : objects100m = objects100m + 1
-                    elif obSize < 204800000 : objects200m = objects200m + 1
-                    elif obSize < 512000000 : objects500m = objects500m + 1
-                    else            : objectsLarge = objectsLarge + 1 
 
-            def getobjects():
+                    #self.TotalCountObjects = self.TotalCountObjects + 1
+                    self.objectsTotalSize = self.objectsTotalSize + obSize
+
+                    if   obSize < 20000 : self.objects20k = self.objects20k + 1
+                    elif obSize < 50000 : self.objects50k = self.objects50k + 1
+                    elif obSize < 100000 : self.objects100k = self.objects100k + 1
+                    elif obSize < 200000 : self.objects200k = self.objects200k + 1
+                    elif obSize < 500000 : self.objects500k = self.objects500k + 1
+                    elif obSize < 700000 : self.objects700k = self.objects700k + 1
+                    elif obSize < 1024000 : self.objects1m = self.objects1m + 1
+                    elif obSize < 2048000 : self.objects2m = self.objects2m + 1
+                    elif obSize < 5120000 : self.objects5m = self.objects5m + 1
+                    elif obSize < 10240000 : self.objects10m = self.objects10m + 1
+                    elif obSize < 51200000 : self.objects50m = self.objects50m + 1
+                    elif obSize < 102400000 : self.objects100m = self.objects100m + 1
+                    elif obSize < 204800000 : self.objects200m = self.objects200m + 1
+                    elif obSize < 512000000 : self.objects500m = self.objects500m + 1
+                    else            : self.objectsLarge = self.objectsLarge + 1 
+
+            def getobjects(self):
+                
                 try:
-                    paginator = s3.get_paginator('list_objects_v2')
-                    pages = paginator.paginate(Bucket=bucketId, Prefix='')
+                    paginator = self.s3.get_paginator('list_objects_v2')
+                    pages = paginator.paginate(Bucket=s3analytics.BUCKETID, Prefix='')
                 except Exception as e:
                     error_code = e.response['Error']['Code']
                     sys.exit("Error during reading objects: ",error_code)
 
-                for page in pages:
-                    global objectsTotalCount
-                    print("Reading Objects: " + str(objectsTotalCount), end='\r')
-                    #print (page)
-                    for obj in page['Contents']:
-                        
-                        analyseObjectSizes(obj['Size'])
-                        q.put(obj['Key'])
+                print("Receiving list of objects...")
 
-            def compareDate(s3key):
+                t = tqdm(total=1000)
+                with t as pbar:
+                    for page in pages:
+                        t.reset()
+                        for obj in page['Contents']:
+                            analyseObjectSizes(self,obj['Size'])
+                            getFolderDepth(self,obj['Key']) 
+                            self.q.put(obj['Key'])
+                            t.update(1)
+                            t.refresh()
+                            
+                        
+                        
+
+            def compareDate(self,s3key,objectDir):
 
                 returnValue = True
-                global bucketId
+
                 fileobj = ""
                 try:
-                    fileobj = s3.get_object(Bucket=bucketId,Key=s3key) 
+                    fileobj = self.s3.get_object(Bucket=s3analytics.BUCKETID,Key=s3key) 
                 except Exception as e:
-                    global errorCount
-                    errorCount = errorCount + 1
-                    writeError(str(e) + "," + s3key)
+                    self.errorCount = self.errorCount + 1
+                    writeError(self,str(e) + "," + s3key)
                     print("Error: "+ str(e) + "," + s3key)
                     returnValue = False
                 
+                timestamp = ""
                 if 'ObjectLockRetainUntilDate' in fileobj:          
                     timestamp = datetime.timestamp(fileobj['ObjectLockRetainUntilDate'])
-                
-                    global dateObjectLockLatest
-                    if timestamp > dateObjectLockLatest:
-                        dateObjectLockLatest = timestamp
-                
-                global ObjectLockModeComplianceCount,ObjectLockModeGovernanceCount,ObjectLockModeLegalHoldCount
+                    if timestamp > self.dateObjectLockLatest:
+                        self.dateObjectLockLatest = timestamp
 
+                objectSize = 0
+                if 'ContentLength' in fileobj:
+                    objectSize = fileobj['ContentLength']
+
+                lastModifiedDate = ""
+                if 'LastModified' in fileobj:          
+                    lastModifiedDate = datetime.timestamp(fileobj['LastModified'])
+                    
+                objectLockMode = ""
                 if 'ObjectLockMode' in fileobj:
                     if fileobj['ObjectLockMode'] == "GOVERNANCE":
-                        ObjectLockModeComplianceCount = ObjectLockModeComplianceCount + 1
-                    elif fileobj['ObjectLockMode'] == "COMPLIANCE":
-                        ObjectLockModeGovernanceCount = ObjectLockModeGovernanceCount + 1
-                
-                if 'ObjectLockLegalHoldStatus' in fileobj:
-                    if fileobj['ObjectLockLegalHoldStatus'] == "ON":
-                        ObjectLockModeLegalHoldCount = ObjectLockModeLegalHoldCount + 1
+                        self.ObjectLockModeComplianceCount = self.ObjectLockModeComplianceCount + 1
+                        objectLockMode = "GOVERNANCE"
 
+                    elif fileobj['ObjectLockMode'] == "COMPLIANCE":
+                        self.ObjectLockModeGovernanceCount = self.ObjectLockModeGovernanceCount + 1
+                        objectLockMode = "COMPLIANCE"
+                
+                objectLockLegalHold = "OFF"
                 if 'ObjectLockLegalHoldStatus' in fileobj:
                     if fileobj['ObjectLockLegalHoldStatus'] == "ON":
-                        ObjectLockModeLegalHoldCount = ObjectLockModeLegalHoldCount + 1       
+                        self.ObjectLockModeLegalHoldCount = self.ObjectLockModeLegalHoldCount + 1
+                        objectLockLegalHold = "ON"
+
+                if (returnValue == True):
+
+                    self.lck.acquire()
+                    objectDir.setdefault(s3key, [])
+                    objectDir[s3key].append(timestamp)
+                    objectDir[s3key].append(int(objectSize))
+                    objectDir[s3key].append(lastModifiedDate)
+                    objectDir[s3key].append(objectLockMode)
+                    objectDir[s3key].append(objectLockLegalHold)
+
+                    self.lck.release()
+
 
                 return returnValue    
-                
-            q = queue.Queue()
-            error_q = queue.Queue()
 
-            def worker(count):
+            def worker(self,count,bar,objectDir):
+                #objectDir = {"s3key":[]}
+
                 while True:
-                    print("Analysing Objects:                            ", end='\r')
-                    print("Analysing Objects: " + str(q.qsize()), end='\r')
-                    _task = q.get()
-                    if compareDate(_task):
-                        q.task_done()
+                    #print("Analysing Objects:                            ", end='\r')
+                    #print("Analysing Objects: " + str(self.q.qsize()), end='\r')
+
+                    _task = self.q.get()
+                    if compareDate(self,_task,objectDir):
+                        self.q.task_done()
+                        bar.update(1)
+                        #print("Thread: "+str(count) +" / Objects: "+str(len(objectDir)))
                     else:
-                        q.task_done()
-                        q.put(_task)
+                        self.q.task_done()
+                        self.q.put(_task)
+
+
+            def startThreads(self):
+
+                #Load Objects
+                self.TotalCountObjects = self.q.qsize()
+
+                print("")
+                print("Analysing Object Headers...")
+                with tqdm(total=self.q.qsize()) as pbar:
                         
-            #Load Objects
-            getobjects()
+                        threads = list()
+                        for index in range(s3analytics.THREADCOUNT):
+                            objectDir = {}
+                            objectGroup.append(objectDir)
+                            x = threading.Thread(target=worker, args=(self,index,pbar,objectGroup[index]))
+                            x.daemon = True
+                            threads.append(x)
+                            x.start()
 
-            threads = list()
+                        self.q.join()
 
-            global threadCount
-            for index in range(threadCount):
-                x = threading.Thread(target=worker, args=(index,))
-                x.daemon = True
-                threads.append(x)
-                x.start()
+            print()
+            getBucketInformation(self)
+            objectGroup = []
+            
+            getobjects(self)
 
-            q.join()
-            printresults()
+            
+            printresults(self)
+            startThreads(self)
 
-            errorlog_f.close()
+            printresults2(self)
+
+
+            self.errorlog_f.close()
 
 s3analyticsobj = s3analytics()
