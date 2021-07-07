@@ -379,7 +379,7 @@ class s3analytics(object):
             def startThreads(self):
 
                 #Load Objects
-                self.TotalCountObjects = self.q.qsize()
+                
 
                 print("")
                 print("Analysing Object Headers...")
@@ -402,7 +402,7 @@ class s3analytics(object):
             
             getobjects(self)
 
-            
+            self.TotalCountObjects = self.q.qsize()
             printresults(self)
             startThreads(self)
 
