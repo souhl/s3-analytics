@@ -20,7 +20,7 @@ Cloudian Storage Policy : 267686b864b15acde424771d6476d0b3
  
 OBJECTS SUMMARY                              
 ##############################################
-Total Objects    : 0
+Total Objects    : 7281
 Total Size (MB)  : 83.27MB
 Errors           : 0
  
