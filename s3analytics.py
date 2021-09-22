@@ -241,8 +241,7 @@ class s3analytics(object):
                 write2screenandfile("Objects in Lock Mode Compliance : " + str(self.ObjectLockModeComplianceCount),self._resultFile)
                 write2screenandfile("Objects in Lock Mode Legal Hold : " + str(self.ObjectLockModeLegalHoldCount),self._resultFile)
 
-                bucketVersioningEnabled = True
-                if bucketVersioningEnabled:
+                if self.bucketVersioningEnabled:
                     write2screenandfile("Bucket Versioning Enabled       : YES",self._resultFile)
                 else:
                     write2screenandfile("Bucket Versioning Enabled       : NO",self._resultFile)
